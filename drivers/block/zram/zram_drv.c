@@ -30,6 +30,7 @@
 #include <linux/err.h>
 #include <linux/idr.h>
 #include <linux/sysfs.h>
+#include <linux/delay.h>
 
 #include "zram_drv.h"
 
@@ -456,6 +457,26 @@ static ssize_t mm_stat_show(struct device *dev,
 	return ret;
 }
 
+static ssize_t page_rw_latency_ns_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct zram *zram = dev_to_zram(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%llu\n", zram->page_rw_latency_ns);
+}
+
+static ssize_t page_rw_latency_ns_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t len)
+{
+	struct zram *zram = dev_to_zram(dev);
+
+	// memparse also parses suffixes, so the user can set the latency to
+	// 1k ns = 1 ms. Does not make a lot of sense, but I'm tempted to keep it.
+	zram->page_rw_latency_ns = memparse(buf, NULL);
+
+	return len;
+}
+
 static DEVICE_ATTR_RO(io_stat);
 static DEVICE_ATTR_RO(mm_stat);
 ZRAM_ATTR_RO(num_reads);
@@ -818,6 +839,10 @@ static int zram_bvec_rw(struct zram *zram, struct bio_vec *bvec, u32 index,
 	generic_start_io_acct(rw, bvec->bv_len >> SECTOR_SHIFT,
 			&zram->disk->part0);
 
+	if (unlikely(zram->page_rw_latency_ns)) {
+		ndelay(zram->page_rw_latency_ns);
+	}
+
 	if (rw == READ) {
 		atomic64_inc(&zram->stats.num_reads);
 		ret = zram_bvec_read(zram, bvec, index, offset);
@@ -1155,6 +1180,7 @@ static DEVICE_ATTR_RW(mem_limit);
 static DEVICE_ATTR_RW(mem_used_max);
 static DEVICE_ATTR_RW(max_comp_streams);
 static DEVICE_ATTR_RW(comp_algorithm);
+static DEVICE_ATTR_RW(page_rw_latency_ns);
 
 static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_disksize.attr,
@@ -1177,6 +1203,7 @@ static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_comp_algorithm.attr,
 	&dev_attr_io_stat.attr,
 	&dev_attr_mm_stat.attr,
+	&dev_attr_page_rw_latency_ns.attr,
 	NULL,
 };
 

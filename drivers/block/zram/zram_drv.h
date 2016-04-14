@@ -118,5 +118,7 @@ struct zram {
 	 * zram is claimed so open request will be failed
 	 */
 	bool claim; /* Protected by bdev->bd_mutex */
+
+	u64 page_rw_latency_ns;
 };
 #endif
