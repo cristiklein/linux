@@ -120,5 +120,6 @@ struct zram {
 	bool claim; /* Protected by bdev->bd_mutex */
 
 	u64 page_rw_latency_ns;
+	bool disable_zero_page_optimization;
 };
 #endif

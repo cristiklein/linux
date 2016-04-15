@@ -477,6 +477,24 @@ static ssize_t page_rw_latency_ns_store(struct device *dev,
 	return len;
 }
 
+static ssize_t disable_zero_page_optimization_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct zram *zram = dev_to_zram(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", zram->disable_zero_page_optimization);
+}
+
+static ssize_t disable_zero_page_optimization_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t len)
+{
+	struct zram *zram = dev_to_zram(dev);
+
+	zram->disable_zero_page_optimization = (buf[0] == '1') ? true : false;
+
+	return len;
+}
+
 static DEVICE_ATTR_RO(io_stat);
 static DEVICE_ATTR_RO(mm_stat);
 ZRAM_ATTR_RO(num_reads);
@@ -706,7 +724,8 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 		uncmem = user_mem;
 	}
 
-	if (page_zero_filled(uncmem)) {
+	if (unlikely(!zram->disable_zero_page_optimization) &&
+			page_zero_filled(uncmem)) {
 		if (user_mem)
 			kunmap_atomic(user_mem);
 		/* Free memory associated with this sector now. */
@@ -801,6 +820,9 @@ static void zram_bio_discard(struct zram *zram, u32 index,
 {
 	size_t n = bio->bi_iter.bi_size;
 	struct zram_meta *meta = zram->meta;
+
+	if (unlikely(zram->disable_zero_page_optimization))
+		return;
 
 	/*
 	 * zram manages data in physical block size units. Because logical block
@@ -952,6 +974,9 @@ static void zram_slot_free_notify(struct block_device *bdev,
 
 	zram = bdev->bd_disk->private_data;
 	meta = zram->meta;
+
+	if (unlikely(zram->disable_zero_page_optimization))
+		return;
 
 	bit_spin_lock(ZRAM_ACCESS, &meta->table[index].value);
 	zram_free_page(zram, index);
@@ -1181,6 +1206,7 @@ static DEVICE_ATTR_RW(mem_used_max);
 static DEVICE_ATTR_RW(max_comp_streams);
 static DEVICE_ATTR_RW(comp_algorithm);
 static DEVICE_ATTR_RW(page_rw_latency_ns);
+static DEVICE_ATTR_RW(disable_zero_page_optimization);
 
 static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_disksize.attr,
@@ -1204,6 +1230,7 @@ static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_io_stat.attr,
 	&dev_attr_mm_stat.attr,
 	&dev_attr_page_rw_latency_ns.attr,
+	&dev_attr_disable_zero_page_optimization.attr,
 	NULL,
 };
 
